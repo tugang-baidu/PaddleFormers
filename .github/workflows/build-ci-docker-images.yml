@@ -1,6 +1,13 @@
 name: Build CI-Docker Images
 
 on:
+  push:
+    branches: [develop]
+    paths:
+      - "requirements*"
+      - "tests/requirements.txt"
+      - "setup.py"
+      - ".github/workflows/build-ci-docker-images.yml"
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [develop]
@@ -17,6 +24,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  PR_ID: ${{ github.event.pull_request.number }}
+  COMMIT_ID: ${{ github.event.pull_request.head.sha }}
   BRANCH: ${{ github.event.pull_request.base.ref }}
   no_proxy: "localhost,bj.bcebos.com,su.bcebos.com,bcebos.com,apiin.im.baidu.com,gitee.com,aliyun.com,.baidu.com,.tuna.tsinghua.edu.cn"
 
@@ -24,6 +33,9 @@ jobs:
   build-ci-docker-images:
     name: build-ci-docker-images
     runs-on: [self-hosted, 4gpu]
+    outputs:
+      image_name: ${{ steps.set_image_name.outputs.image_name }}
+  
     steps:
       - name: Download Code
         env:
@@ -39,8 +51,7 @@ jobs:
           git config --global user.email "paddle_ci@example.com"
           git pull
           git submodule update --init --recursive --force
-          if [ -n "${{ github.event.pull_request.number }}" ]; then
-            export PR_ID=${{ github.event.pull_request.number }}
+          if [ -n "${PR_ID}" ]; then
             git fetch origin pull/${PR_ID}/head
             git checkout -b PR_${PR_ID} FETCH_HEAD
             git remote add upstream https://github.com/PaddlePaddle/PaddleFormers.git
@@ -76,24 +87,46 @@ jobs:
           CMD ["python3"]
           EOF
       
+      - name: Set Image Name
+        id: set_image_name
+        run: |
+          if [[ "${{ github.event_name }}" =~ ^(push|schedule)$ ]]; then
+            image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            image_name=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-${PR_ID}-${COMMIT_ID}
+          fi
+          echo "image_name=${image_name}" >> ${{ github.env }}
+          echo "image_name=${image_name}" >> "$GITHUB_OUTPUT"
+      
       - name: Build Docker Image
         run: |
-          docker build -t iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest .
+          docker build -t ${{ env.image_name }} .
 
-      - name: Test CI Image
-        run: |
-          container_name=PaddleFormers-Build-test-${core_index}-$(date +%Y%m%d-%H%M%S)
-          echo "container_name=${container_name}" >> ${{ github.env }}
-          docker_image=iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-latest
-          nvidia-docker run -d -t --name ${container_name} --net=host -v /dev/shm:/dev/shm --shm-size=32G \
-          --runtime=nvidia ${docker_image} /bin/bash -c "
-            python -c \"from paddleformers import __version__; print('paddleformers version:', __version__)\"
-            python -c \"import paddleformers; print('paddleformers commit:', paddleformers.version.commit)\"
-            python -c \"import paddle; print('paddle'); print(paddle.__version__); print(paddle.version.show())\"
-            python -m pip list
-          "
+  test-ci-docker-images:
+    name: test-ci-docker-images
+    if: github.event_name == 'pull_request'
+    needs: build-ci-docker-images
+    uses: ./.github/workflows/unittest-gpu.yml
+    with:
+      image_name: ${{ needs.build-ci-docker-images.outputs.image_name }}
 
-      - name: Terminate And Delete the Container
-        if: always()
+  clean-ci-image:
+    needs: test-ci-docker-images
+    if: github.event_name == 'pull_request'
+    runs-on: [self-hosted, 4gpu]
+    steps:
+      - name: Remove CI Image
         run: |
-          docker rm -f ${{ env.container_name }}
+          image_name="iregistry.baidu-int.com/paddlecloud/base-images:paddlecloud-ubuntu18.04-gcc8.2-cuda11.8-cudnn8.6-nccl2.15.5-${PR_ID}-${COMMIT_ID}"
+          CONTAINERS=$(docker ps -a --filter "ancestor=$image_name" --format "{{.ID}}")
+
+          if [ -z "$CONTAINERS" ]; then
+              echo "$image_name is not using by any container, deleting..."
+              docker rmi "$image_name"
+          else
+              echo "$image_name is using by containers:"
+              echo "$CONTAINERS"
+          fi
+
+          # 安全删除悬空镜像（无悬空镜像时跳过）
+          docker images -f "dangling=true" -q | xargs -r docker rmi -f
