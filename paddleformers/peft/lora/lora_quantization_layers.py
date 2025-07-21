@@ -49,7 +49,7 @@ class QuantizationLoRABaseLinear(nn.Layer):
             self.act_scale = self.create_parameter(
                 shape=[1],
                 dtype=self._dtype,
-                is__bias=False,
+                is_bias=False,
                 default_initializer=nn.initializer.Constant(value=0.0),
             )
             self.act_scale.is_distributed = False
