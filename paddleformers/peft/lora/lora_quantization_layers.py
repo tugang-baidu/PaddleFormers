@@ -44,7 +44,7 @@ class QuantizationLoRABaseLinear(nn.Layer):
         else:
             self.weight_scale = layer.weight_scale
         self.bias = layer.bias
-        self.state = 0
+
         if self.weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
             self.act_scale = self.create_parameter(
                 shape=[1],
@@ -92,10 +92,8 @@ class QuantizationLoRABaseLinear(nn.Layer):
             if (self.weight_quantize_algo in ["fp4", "nf4"] and self.quantization_config.qlora_weight_double_quant)
             else None,
             bias=self.bias if add_bias else None,
-            act_state=(self.state, self.training, self.act_scale, self.group)
+
         )
-        if self.training:
-            self.state += 1
         return output
 
     def merge(self):
