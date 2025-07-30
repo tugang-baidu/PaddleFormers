@@ -357,6 +357,7 @@ class QuantizationLinear(nn.Layer):
                     dtype="float32",
                     is_bias=False,
                 )
+                self.weight_scale = None
             else:
                 self.weight_scale = self.create_parameter(
                     shape=[in_features * out_features // self.quantization_config.qlora_weight_blocksize],
@@ -546,7 +547,9 @@ class ColumnParallelQuantizationLinear(nn.Layer):
                     is_bias=False,
                 )
                 self.weight_scale_offset.stop_gradient = True
-                self.weight_scale_offset.is_distributed = False
+                self.weight_scale_offset.is_distributed = True if self.is_mp else False
+                if self.weight_scale_offset.is_distributed:
+                    self.weight_scale_offset.split_axis = 0
             else:
                 self.weight_scale = self.create_parameter(
                     shape=[in_features * self.output_size_per_partition // self.quantization_config.qlora_weight_blocksize],
@@ -735,7 +738,7 @@ class RowParallelQuantizationLinear(nn.Layer):
                 self.qweight_scale.stop_gradient = True
                 self.qweight_scale.is_distributed = True if self.is_mp else False
                 if self.qweight_scale.is_distributed:
-                    self.qweight_scale.split_axis = 1
+                    self.qweight_scale.split_axis = 0
                 # double weight_scale: weight_scale of quantized weight_scale
                 self.double_weight_scale = self.create_parameter(
                     shape=[
@@ -757,7 +760,9 @@ class RowParallelQuantizationLinear(nn.Layer):
                     is_bias=False,
                 )
                 self.weight_scale_offset.stop_gradient = True
-                self.weight_scale_offset.is_distributed = False
+                self.weight_scale_offset.is_distributed = True if self.is_mp else False
+                if self.weight_scale_offset.is_distributed:
+                    self.weight_scale_offset.split_axis = 0
             else:
                 self.weight_scale = self.create_parameter(
                     shape=[self.input_size_per_partition * out_features // self.quantization_config.qlora_weight_blocksize],
