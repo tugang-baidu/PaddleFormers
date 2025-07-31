@@ -44,22 +44,7 @@ class QuantizationLoRABaseLinear(nn.Layer):
         else:
             self.weight_scale = layer.weight_scale
         self.bias = layer.bias
-
-        if self.weight_quantize_algo in ["a8w8linear", "a8w4linear", "fp8linear"]:
-            self.act_scale = self.create_parameter(
-                shape=[1],
-                dtype=self._dtype,
-                is_bias=False,
-                default_initializer=nn.initializer.Constant(value=0.0),
-            )
-            self.act_scale.is_distributed = False
-            self.act_scale.stop_gradient = True
-            self.group = get_act_scale_group(is_row=True)
-        else:
-            raise NotImplementedError(
-                f"Not supported weight_quantize_algo {self.weight_quantize_algo}"
-            )
-
+        
         # LoRA related parameters
         self.lora_config = lora_config
         if not isinstance(self.lora_config.r, int) or self.lora_config.r <= 0:
