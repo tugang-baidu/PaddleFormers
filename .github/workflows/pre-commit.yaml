@@ -24,3 +24,11 @@ repos:
         additional_dependencies:
           - "importlib‑metadata<5.0"
 
+  - repo: https://github.com/psf/black
+    rev: 23.11.0
+    hooks:
+      - id: black
+        args: [--check]
+        language_version: python3.11
+
+
