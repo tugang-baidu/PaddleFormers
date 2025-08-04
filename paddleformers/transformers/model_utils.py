@@ -2055,7 +2055,8 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                 ]
             elif isinstance(config.quantization_config.weight_quantize_algo, dict):
                 post_quantize = any(
-                    key in ["weight_only_int4", "weight_only_int8", "nf4", "fp4"] for key in config.quantization_config.weight_quantize_algo.keys()
+                    key in ["weight_only_int4", "weight_only_int8", "nf4", "fp4"] 
+                    for key in config.quantization_config.weight_quantize_algo.keys()
                 )
             else:
                 post_quantize = False
