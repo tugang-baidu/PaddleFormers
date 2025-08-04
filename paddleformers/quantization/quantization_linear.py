@@ -518,7 +518,9 @@ class ColumnParallelQuantizationLinear(nn.Layer):
             if self.quantization_config.qlora_weight_double_quant:
                 # quantized weight_scale
                 self.qweight_scale = self.create_parameter(
-                    shape=[in_features * self.output_size_per_partition // self.quantization_config.qlora_weight_blocksize],
+                    shape=[
+                        in_features * self.output_size_per_partition // self.quantization_config.qlora_weight_blocksize
+                    ],
                     dtype="uint8",
                     is_bias=False,
                 )
@@ -552,14 +554,17 @@ class ColumnParallelQuantizationLinear(nn.Layer):
                     self.weight_scale_offset.split_axis = 0
             else:
                 self.weight_scale = self.create_parameter(
-                    shape=[in_features * self.output_size_per_partition // self.quantization_config.qlora_weight_blocksize],
+                    shape=[
+                        in_features * self.output_size_per_partition // self.quantization_config.qlora_weight_blocksize
+                    ],
                     dtype="float32",
                     is_bias=False,
                 )
                 self.weight_scale.stop_gradient = True
                 self.weight_scale.is_distributed = True if self.is_mp else False
                 if self.weight_scale.is_distributed:
-                    self.weight_scale.split_axis = 0        
+                    self.weight_scale.split_axis = 0
+                    
         else:
             raise NotImplementedError(f"Not yet support weight_quantize_algo: {self.weight_quantize_algo}")
         if bias_attr is False:
@@ -731,7 +736,9 @@ class RowParallelQuantizationLinear(nn.Layer):
             if self.quantization_config.qlora_weight_double_quant:
                 # quantized weight_scale
                 self.qweight_scale = self.create_parameter(
-                    shape=[self.input_size_per_partition * out_features // self.quantization_config.qlora_weight_blocksize],
+                    shape=[
+                        self.input_size_per_partition * out_features // self.quantization_config.qlora_weight_blocksize
+                    ],
                     dtype="uint8",
                     is_bias=False,
                 )
@@ -765,14 +772,18 @@ class RowParallelQuantizationLinear(nn.Layer):
                     self.weight_scale_offset.split_axis = 0
             else:
                 self.weight_scale = self.create_parameter(
-                    shape=[self.input_size_per_partition * out_features // self.quantization_config.qlora_weight_blocksize],
+                    shape=[
+                        self.input_size_per_partition * out_features // self.quantization_config.qlora_weight_blocksize
+                    ],
                     dtype="float32",
                     is_bias=False,
-                )            
+                )
+                
                 self.weight_scale.stop_gradient = True
                 self.weight_scale.is_distributed = True if self.is_mp else False
                 if self.weight_scale.is_distributed:
-                    self.weight_scale.split_axis = 0        
+                    self.weight_scale.split_axis = 0
+                    
         else:
             raise NotImplementedError(f"Not yet support weight_quantize_algo: {self.weight_quantize_algo}")
 
