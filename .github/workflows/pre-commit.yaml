@@ -1,4 +1,5 @@
-name: 🧪 pre-commit check
+name: pre-commit check
+
 on:
   pull_request:
 
@@ -14,3 +15,12 @@ jobs:
       - uses: pre-commit/action@v3.0.1
         with:
           extra_args: --all-files
+          
+repos:
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        additional_dependencies:
+          - "importlib‑metadata<5.0"
+
