@@ -564,7 +564,7 @@ class ColumnParallelQuantizationLinear(nn.Layer):
                 self.weight_scale.is_distributed = True if self.is_mp else False
                 if self.weight_scale.is_distributed:
                     self.weight_scale.split_axis = 0
-                    
+
         else:
             raise NotImplementedError(f"Not yet support weight_quantize_algo: {self.weight_quantize_algo}")
         if bias_attr is False:
@@ -778,12 +778,12 @@ class RowParallelQuantizationLinear(nn.Layer):
                     dtype="float32",
                     is_bias=False,
                 )
-                
+
                 self.weight_scale.stop_gradient = True
                 self.weight_scale.is_distributed = True if self.is_mp else False
                 if self.weight_scale.is_distributed:
                     self.weight_scale.split_axis = 0
-                    
+
         else:
             raise NotImplementedError(f"Not yet support weight_quantize_algo: {self.weight_quantize_algo}")
 

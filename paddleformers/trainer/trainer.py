@@ -523,9 +523,9 @@ class Trainer:
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
                 excluded_layers=[
-                    QuantizationLinear, 
-                    ColumnParallelQuantizationLinear, 
-                    RowParallelQuantizationLinear, 
+                    QuantizationLinear,
+                    ColumnParallelQuantizationLinear,
+                    RowParallelQuantizationLinear,
                     QuantizationLoRABaseLinear,
                 ]
                 + self._decorate_exclude_layers(model),
@@ -2198,9 +2198,9 @@ class Trainer:
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
                 excluded_layers=[
-                    QuantizationLinear, 
-                    ColumnParallelQuantizationLinear, 
-                    RowParallelQuantizationLinear, 
+                    QuantizationLinear,
+                    ColumnParallelQuantizationLinear,
+                    RowParallelQuantizationLinear,
                     QuantizationLoRABaseLinear,
                 ]
                 + self._decorate_exclude_layers(model),
