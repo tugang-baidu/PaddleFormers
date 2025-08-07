@@ -1,6 +1,7 @@
 jobs:
   Lint:
     name: Lint
+    on: [pull_request, push]
     runs-on: [self-hosted, ernie-cpu]
     steps:
       - name: Setup Node.js
