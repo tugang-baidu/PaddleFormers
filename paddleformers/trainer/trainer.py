@@ -84,6 +84,7 @@ from ..data import (
     init_dataloader_comm_group,
 )
 from ..peft import LoKrModel, LoRAModel, PrefixModelForCausalLM, ReFTModel, VeRAModel
+from ..peft.lora import QuantizationLoRABaseLinear
 from ..quantization.quantization_linear import (
     ColumnParallelQuantizationLinear,
     QuantizationLinear,
@@ -524,7 +525,12 @@ class Trainer:
                 models=model,
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
-                excluded_layers=[QuantizationLinear, ColumnParallelQuantizationLinear, RowParallelQuantizationLinear]
+                excluded_layers=[
+                    QuantizationLinear,
+                    ColumnParallelQuantizationLinear,
+                    RowParallelQuantizationLinear,
+                    QuantizationLoRABaseLinear,
+                ]
                 + self._decorate_exclude_layers(model),
             )
         # for pipeline mode and pure tensor parallel
@@ -2194,7 +2200,12 @@ class Trainer:
                 optimizers=self.optimizer,
                 level=self.args.fp16_opt_level,
                 dtype=self.amp_dtype,
-                excluded_layers=[QuantizationLinear, ColumnParallelQuantizationLinear, RowParallelQuantizationLinear]
+                excluded_layers=[
+                    QuantizationLinear,
+                    ColumnParallelQuantizationLinear,
+                    RowParallelQuantizationLinear,
+                    QuantizationLoRABaseLinear,
+                ]
                 + self._decorate_exclude_layers(model),
             )
 
