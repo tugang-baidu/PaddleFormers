@@ -30,26 +30,26 @@ __all__ = ["LlamaTokenizer", "Llama3Tokenizer"]
 class LlamaTokenizer(PretrainedTokenizer):
     model_input_names = ["input_ids", "attention_mask", "position_ids"]
     resource_files_names = {
-        "vocab_file": "sentencepiece.bpe.model",
+        "vocab_file": "tokenizer.model",
     }
     pretrained_resource_files_map = {
         "vocab_file": {
-            "__internal_testing__/micro-random-llama": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
-            "__internal_testing__/tiny-random-llama": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
-            "facebook/llama-7b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
-            "facebook/llama-13b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
-            "facebook/llama-30b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
-            "facebook/llama-65b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
+            # "__internal_testing__/micro-random-llama": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
+            # "__internal_testing__/tiny-random-llama": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
+            # "facebook/llama-7b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
+            # "facebook/llama-13b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
+            # "facebook/llama-30b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
+            # "facebook/llama-65b": "https://bj.bcebos.com/paddlenlp/models/transformers/llama/sentencepiece.bpe.model",
         },
     }
 
     pretrained_init_configuration = {
-        "__internal_testing__/micro-random-llama": {},
-        "__internal_testing__/tiny-random-llama": {},
-        "facebook/llama-7b": {},
-        "facebook/llama-13b": {},
-        "facebook/llama-30b": {},
-        "facebook/llama-65b": {},
+        # "__internal_testing__/micro-random-llama": {},
+        # "__internal_testing__/tiny-random-llama": {},
+        # "facebook/llama-7b": {},
+        # "facebook/llama-13b": {},
+        # "facebook/llama-30b": {},
+        # "facebook/llama-65b": {},
     }
     padding_side = "left"
 

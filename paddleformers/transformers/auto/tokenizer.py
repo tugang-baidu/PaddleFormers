@@ -56,6 +56,7 @@ else:
                 "deepseek_v2",
                 "DeepseekTokenizerFast" if is_tokenizers_available() else None,
             ),
+            ("ernie4_5", "Ernie4_5Tokenizer"),
             (
                 "llama",
                 (
@@ -225,6 +226,7 @@ def get_tokenizer_config(
     tokenizer.save_pretrained("tokenizer-test")
     tokenizer_config = get_tokenizer_config("tokenizer-test")
     ```"""
+    download_hub = kwargs.get("download_hub", None)
 
     resolved_config_file = resolve_file_path(
         pretrained_model_name_or_path,
@@ -237,6 +239,7 @@ def get_tokenizer_config(
         revision=revision,
         local_files_only=local_files_only,
         subfolder=subfolder,
+        download_hub=download_hub,
     )
     if resolved_config_file is None:
         logger.info("Could not locate the tokenizer configuration file, will try to use the model config instead.")

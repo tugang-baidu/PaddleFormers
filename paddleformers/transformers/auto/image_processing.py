@@ -128,8 +128,7 @@ class AutoImageProcessor:
         subfolder = kwargs.get("subfolder", "")
         if subfolder is None:
             subfolder = ""
-        from_aistudio = kwargs.get("from_aistudio", False)
-        from_hf_hub = kwargs.get("from_hf_hub", False)
+        download_hub = kwargs.get("download_hub", None)
         kwargs["subfolder"] = subfolder
         kwargs["cache_dir"] = cache_dir
 
@@ -156,8 +155,7 @@ class AutoImageProcessor:
             [cls.image_processor_config_file],
             subfolder,
             cache_dir=cache_dir,
-            from_hf_hub=from_hf_hub,
-            from_aistudio=from_aistudio,
+            download_hub=download_hub,
         )
         if config_file is not None and os.path.exists(config_file):
             processor_class = cls._get_image_processor_class_from_config(

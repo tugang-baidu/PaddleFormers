@@ -99,6 +99,7 @@ except:
     pass
 
 from ..transformers.context_parallel_utils import split_inputs_sequence_dim_load_balance
+from ..transformers.image_processing_utils import ImageProcessingMixin
 from ..transformers.model_utils import (
     PretrainedModel,
     _add_variant,
@@ -157,6 +158,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     ShardingOption,
     TrainerMemoryTracker,
     TrainOutput,
+    _insert_sync,
     download_recovery_ckpt_from_pdc,
     find_batch_size,
     get_last_checkpoint,
@@ -297,6 +299,7 @@ class Trainer:
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[paddle.optimizer.Optimizer, paddle.optimizer.lr.LRScheduler] = (None, None),
         preprocess_logits_for_metrics: Callable[[paddle.Tensor, paddle.Tensor], paddle.Tensor] = None,
+        processing_class: Optional[ImageProcessingMixin] = None,
     ):
 
         if args is None:
@@ -362,6 +365,7 @@ class Trainer:
 
         self.compute_metrics = compute_metrics
         self.preprocess_logits_for_metrics = preprocess_logits_for_metrics
+        self.processing_class = processing_class
         self.optimizer, self.lr_scheduler = optimizers
         # Label smoothing
         # if self.args.label_smoothing_factor != 0:
@@ -374,7 +378,13 @@ class Trainer:
         self.optimizer_grouped_parameters = None
         self.sharding_io = None
         if self.args.should_save_sharding_stage1_model or self.args.should_load_sharding_stage1_model:
-            self.sharding_io = ShardingIO(self.args, self.model, self.optimizer)
+            self.sharding_io = ShardingIO(
+                self.args,
+                self.model,
+                self.optimizer,
+                remap_parameter_name=self.args.load_sharded_model_remap_parameter_name,
+            )
+
         if self.args.unified_checkpoint:
             self.unified_checkpoint_handler = UnifiedCheckpointHandler(self.args)
 
@@ -2404,6 +2414,9 @@ class Trainer:
                 ):
                     self.optimizer._set_broadcast_overlap(True, model)
 
+        # To solve DPO pin-memory problem, temporarily modify the _insert_sync method.
+        self.optimizer._insert_sync = types.MethodType(_insert_sync, self.optimizer)
+
         return model
 
     def _prepare_input(self, data: Union[paddle.Tensor, Any]) -> Union[paddle.Tensor, Any]:
@@ -2985,6 +2998,8 @@ class Trainer:
         if self.args.should_save:
             if self.tokenizer is not None and self.args.save_tokenizer:
                 self.tokenizer.save_pretrained(output_dir)
+            if self.processing_class is not None:
+                self.processing_class.save_pretrained(output_dir)
             # Good practice: save your training arguments together with the trained model
             paddle.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
 

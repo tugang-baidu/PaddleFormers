@@ -57,6 +57,7 @@ from ..utils.env import HF_CACHE_HOME, MODEL_HOME
 from ..utils.import_utils import import_module
 from ..utils.log import logger
 from .aistudio_utils import aistudio_download
+from .download_utils import DownloadSource
 
 HUGGINGFACE_CO_RESOLVE_ENDPOINT = "https://huggingface.co"
 
@@ -321,18 +322,20 @@ def param_in_func(func, param_field: str) -> bool:
     return param_field in result[0]
 
 
-def resolve_cache_dir(from_hf_hub: bool, from_aistudio: bool, cache_dir: Optional[str] = None) -> str:
+def resolve_cache_dir(download_hub: DownloadSource = None, cache_dir: Optional[str] = None) -> str:
     """resolve cache dir for PretrainedModel and PretrainedConfig
 
     Args:
-        from_hf_hub (bool): if load from huggingface hub
+        download_hub (DownloadSource): The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `aistudio`.
         cache_dir (str): cache_dir for models
     """
     if cache_dir is not None:
         return cache_dir
-    if from_aistudio:
+    if download_hub == DownloadSource.MODELSCOPE:
         return None
-    if from_hf_hub:
+    if download_hub == DownloadSource.AISTUDIO:
+        return None
+    if download_hub == DownloadSource.HUGGINGFACE:
         return HF_CACHE_HOME
     return MODEL_HOME
 
@@ -503,7 +506,7 @@ def cached_file(
     filename: str,
     cache_dir: Optional[Union[str, os.PathLike]] = None,
     subfolder: str = "",
-    from_aistudio: bool = False,
+    download_hub: DownloadSource = None,
     _raise_exceptions_for_missing_entries: bool = True,
     _raise_exceptions_for_connection_errors: bool = True,
     pretrained_model_name_or_path=None,
@@ -553,7 +556,7 @@ def cached_file(
     if cache_dir is not None and isinstance(cache_dir, Path):
         cache_dir = str(cache_dir)
 
-    if from_aistudio:
+    if download_hub == DownloadSource.AISTUDIO:
         try:
             resolved_file = aistudio_download(
                 repo_id=path_or_repo_id, filename=filename, subfolder=subfolder, cache_dir=cache_dir
@@ -650,8 +653,7 @@ def get_checkpoint_shard_files(
     index_filename,
     cache_dir=None,
     subfolder="",
-    from_aistudio=False,
-    from_hf_hub=False,
+    download_hub=None,
 ):
     """
     For a given model:
@@ -704,8 +706,7 @@ def get_checkpoint_shard_files(
                 [shard_filename],
                 subfolder,
                 cache_dir=cache_dir,
-                from_aistudio=from_aistudio,
-                from_hf_hub=from_hf_hub,
+                download_hub=download_hub,
             )
             assert (
                 cached_filename is not None

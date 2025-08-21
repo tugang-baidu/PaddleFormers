@@ -33,7 +33,7 @@ VOCAB_FILES_NAMES = {
 
 __all__ = ["Qwen2Tokenizer"]
 
-MAX_MODEL_INPUT_SIZES = {"__internal_testing__/tiny-random-qwen2": 32768}
+MAX_MODEL_INPUT_SIZES = {}  # {"__internal_testing__/tiny-random-qwen2": 32768}
 
 PRETOKENIZE_REGEX = r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"""
 
@@ -134,7 +134,7 @@ class Qwen2Tokenizer(PretrainedTokenizer):
 
     pretrained_resource_files_map = {
         "vocab_file": {
-            "__internal_testing__/tiny-random-qwen2": "https://bj.bcebos.com/paddlenlp/models/community/qwen2/vocab.json",
+            # "__internal_testing__/tiny-random-qwen2": "https://bj.bcebos.com/paddlenlp/models/community/qwen2/vocab.json",
         },
     }
 
@@ -289,7 +289,7 @@ class Qwen2Tokenizer(PretrainedTokenizer):
         text = bytearray([self.byte_decoder[c] for c in text]).decode("utf-8", errors=self.errors)
         return text
 
-    def _decode(
+    def decode(
         self,
         token_ids,
         skip_special_tokens: bool = False,
@@ -299,7 +299,7 @@ class Qwen2Tokenizer(PretrainedTokenizer):
     ) -> str:
         # `spaces_between_special_tokens` defaults to True for _decode in slow tokenizers
         # and cannot be configured elsewhere, but it should default to False for Qwen2Tokenizer
-        return super()._decode(
+        return super().decode(
             token_ids,
             skip_special_tokens=skip_special_tokens,
             clean_up_tokenization_spaces=clean_up_tokenization_spaces,

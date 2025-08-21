@@ -306,7 +306,7 @@ class ImageProcessingMixin(object):
         Parameters:
             pretrained_model_name_or_path (`str` or `os.PathLike`):
                 The identifier of the pre-trained checkpoint from which we want the dictionary of parameters.
-            from_hf_hub (bool, optional): whether to load from Huggingface Hub
+            download_hub (DownloadSource, optional): The source for model downloading, options include `huggingface`, `aistudio`, `modelscope`, default `aistudio`.
             subfolder (str, optional) An optional value corresponding to a folder inside the repo.
 
 
@@ -314,8 +314,7 @@ class ImageProcessingMixin(object):
             `Tuple[Dict, Dict]`: The dictionary(ies) that will be used to instantiate the image processor object.
         """
         cache_dir = kwargs.pop("cache_dir", None)
-        from_hf_hub = kwargs.pop("from_hf_hub", False)
-        from_aistudio = kwargs.pop("from_aistudio", False)
+        download_hub = kwargs.pop("download_hub", None)
         subfolder = kwargs.pop("subfolder", "")
         if subfolder is None:
             subfolder = ""
@@ -327,8 +326,7 @@ class ImageProcessingMixin(object):
             [IMAGE_PROCESSOR_NAME],
             subfolder,
             cache_dir=cache_dir,
-            from_hf_hub=from_hf_hub,
-            from_aistudio=from_aistudio,
+            download_hub=download_hub,
         )
         assert (
             resolved_image_processor_file is not None

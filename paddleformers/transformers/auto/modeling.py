@@ -21,7 +21,8 @@ from copy import deepcopy
 
 from ...utils.download import resolve_file_path
 from ...utils.log import logger
-from .. import *  # noqa
+
+# from .. import *  # noqa
 from ..configuration_utils import is_standard_config
 from .configuration import (
     CONFIG_MAPPING_NAMES,
@@ -54,6 +55,7 @@ MAPPING_NAMES = OrderedDict(
         ("Bert", "bert"),
         ("DeepseekV2", "deepseek_v2"),
         ("DeepseekV3", "deepseek_v3"),
+        ("Ernie4_5", "ernie4_5"),
         ("Llama", "llama"),
         ("QWen", "qwen"),
         ("Qwen2", "qwen2"),
@@ -221,8 +223,7 @@ class _BaseAutoModelClass:
             else:
                 print("We only support task choice for AutoModel.")
         cache_dir = kwargs.get("cache_dir", None)
-        from_aistudio = kwargs.get("from_aistudio", False)
-        from_hf_hub = kwargs.get("from_hf_hub", False)
+        download_hub = kwargs.get("download_hub", None)
         subfolder = kwargs.get("subfolder", "")
         if subfolder is None:
             subfolder = ""
@@ -270,8 +271,7 @@ class _BaseAutoModelClass:
             [cls.model_config_file, cls.legacy_model_config_file],
             subfolder,
             cache_dir=cache_dir,
-            from_hf_hub=from_hf_hub,
-            from_aistudio=from_aistudio,
+            download_hub=download_hub,
         )
         if config_file is not None and os.path.exists(config_file):
             model_class = cls._get_model_class_from_config(pretrained_model_name_or_path, config_file)
