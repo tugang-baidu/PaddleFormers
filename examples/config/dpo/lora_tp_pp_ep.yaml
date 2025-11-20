@@ -1,16 +1,16 @@
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: ./tests/fixtures/dummy/ernie/dpo-train.jsonl
+train_dataset_path: ./tests/fixtures/dummy/dpo/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./tests/fixtures/dummy/ernie/dpo-train.jsonl
+eval_dataset_path: ./tests/fixtures/dummy/dpo/eval.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 packing: true
 mix_strategy: concat
 
 ### model
-model_name_or_path: ./glm4moe_3layers_model
+model_name_or_path: Qwen/Qwen3-0.6B-Base
 attn_impl: flashmask
 lora: true
 lora_rank: 8
@@ -33,7 +33,7 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./output/glm4moe_3layers_model
+output_dir: ./checkpoints/qwen3-dpo-lora-tp-pp-ep
 disable_tqdm: true
 eval_accumulation_steps: 16
 

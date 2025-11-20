@@ -1,9 +1,9 @@
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
-train_dataset_path: ./tests/fixtures/dummy/sft/train.json
+train_dataset_path: ./tests/fixtures/dummy/pt/train.jsonl
 train_dataset_prob: "1.0"
-eval_dataset_path: ./tests/fixtures/dummy/sft/eval.json
+eval_dataset_path: ./tests/fixtures/dummy/pt/eval.jsonl
 eval_dataset_prob: "1.0"
 max_seq_len: 8192
 num_samples_each_epoch: 6000000
@@ -11,13 +11,13 @@ packing: true
 mix_strategy: concat
 
 ### model
-model_name_or_path:  Qwen/Qwen3-0.6B-Base
+model_name_or_path: Qwen/Qwen3-0.6B-Base
 attn_impl: flashmask
 
 ### finetuning
 # base
-stage: SFT
-fine_tuning: full
+stage: PT
+fine_tuning: lora
 seed: 23
 do_train: true
 do_eval: true
@@ -33,7 +33,7 @@ save_strategy: steps
 logging_steps: 1
 gradient_accumulation_steps: 4
 logging_dir: ./vdl_log
-output_dir: ./checkpoints/qwen3-sft-full-tp-pp-ep
+output_dir: ./checkpoints/qwen3-pt-lora-tp-pp-ep
 disable_tqdm: true
 eval_accumulation_steps: 16
 
