@@ -193,6 +193,7 @@ from .trainer_utils import (  # set_hyrbid_parallel_seed,
     has_length,
     init_optimizer,
     mock_offload_optimizer,
+    set_random_seed,
     set_seed,
     should_skip_data,
     speed_metrics,
@@ -358,7 +359,9 @@ class Trainer:
         self._memory_tracker.start()
 
         # Seed must be set before instantiating the model when using model
+        set_random_seed(seed_=self.args.seed)
         set_seed(seed=self.args.seed)
+
         self._skip_global_steps = 0  # total skip global steps
         self._skip_steps_since_last_logged = 0  # skip steps since last logged
         if model is None:
