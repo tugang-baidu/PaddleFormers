@@ -1806,7 +1806,7 @@ def _restore_master_weights_single(master_weights, model, optimizer, group, stru
 
 
 def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
-    master_weights = ema_state_dict["master_weights"]
+    master_weights = ema_state_dict.get("master_weights", {})
     tmp = OrderedDict()
     (master_weights, tmp) = (tmp, master_weights)
     # cast to bf16 and move to cpu
@@ -1831,16 +1831,15 @@ def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):
                 mw_1d[k] = v
 
         all_master_weights = OrderedDict()
-        if mw_2d:
-            restored_2d = _restore_master_weights_single(
-                mw_2d, model, optimizer, group, structure_name_map, reshard_util.sharding_v1.restore
-            )
-            all_master_weights.update(restored_2d)
-        if mw_1d:
-            restored_1d = _restore_master_weights_single(
-                mw_1d, model, optimizer, group, structure_name_map, reshard_util.sharding_v2.restore
-            )
-            all_master_weights.update(restored_1d)
+        restored_2d = _restore_master_weights_single(
+            mw_2d, model, optimizer, group, structure_name_map, reshard_util.sharding_v1.restore
+        )
+        all_master_weights.update(restored_2d)
+
+        restored_1d = _restore_master_weights_single(
+            mw_1d, model, optimizer, group, structure_name_map, reshard_util.sharding_v2.restore
+        )
+        all_master_weights.update(restored_1d)
 
         master_weights = all_master_weights
     else:
@@ -2134,7 +2133,7 @@ class EMAStateAssembler:
         ema_state_dict_grouped = split_opt_state(ema_state_dict, group_getter)
         ema_params_recovered = {}
         for gid in group_getter.get_group_ids():
-            sub_ema_state_dict = ema_state_dict_grouped[gid]
+            sub_ema_state_dict = ema_state_dict_grouped.get(gid, {})
             group = group_getter.get_group_by_id(gid)
             recovered = recover_params_from_master_weight(sub_ema_state_dict, self.model, self.optimizer, group)
             ema_params_recovered.update(recovered)
@@ -2269,19 +2268,8 @@ def select_flex_ckpt_comm_method():
         hcg = dist.fleet.get_hybrid_communicate_group()
         try:
             pp_group = hcg.get_pipe_parallel_group()
-            if pp_group is None or pp_group.nranks <= 1:
-                logger.info(
-                    "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
-                    "because the current pipeline_parallel_group is empty"
-                )
-                comm_method = _BROADCAST
         except Exception:
-            logger.info(
-                "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
-                "because failed to get pipeline_parallel_group"
-            )
-            comm_method = _BROADCAST
-
+            pp_group = None
         try:
             moe_group = hcg.get_expert_parallel_group()
             if moe_group is None or moe_group.nranks <= 1:
@@ -2313,7 +2301,8 @@ def select_flex_ckpt_comm_method():
             comm_method = _BROADCAST
 
         if comm_method == _PARALLEL_BROADCAST:
-            total_size = pp_group.nranks * moe_group.nranks * moe_sharding_group.nranks
+            pp_size = pp_group.nranks if pp_group is not None else 1
+            total_size = pp_size * moe_group.nranks * moe_sharding_group.nranks
             if total_size != world_size:
                 logger.info(
                     "Automatically selected 'broadcast' communication method for FlexCheckpoint reshard "
