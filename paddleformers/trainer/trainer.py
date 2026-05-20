@@ -2656,6 +2656,24 @@ class Trainer:
             except (ImportError, AttributeError):
                 pass
 
+            # Add DSA indexer loss metrics if available
+            try:
+                from paddlefleet.transformer.dsa_attention import (
+                    DSAIndexerLossLoggingHelper,
+                )
+
+                if DSAIndexerLossLoggingHelper.tracker.get("values") is not None:
+                    loss_scale = 1.0 / self.args.gradient_accumulation_steps
+                    DSAIndexerLossLoggingHelper.reduce_loss_in_tracker()
+                    tracker = DSAIndexerLossLoggingHelper.tracker
+                    indexer_loss_values = tracker["values"] * loss_scale
+                    num_layers = indexer_loss_values.shape[0]
+                    avg_indexer_loss = indexer_loss_values.sum() / num_layers
+                    logs["indexer_loss"] = avg_indexer_loss.item()
+                    DSAIndexerLossLoggingHelper.clean_loss_in_tracker()
+            except (ImportError, AttributeError):
+                pass
+
             self._total_loss_scalar += tr_loss_scalar
             self._globalstep_last_logged = self.state.global_step
             self._globalstep_last_start_time = time.time()
