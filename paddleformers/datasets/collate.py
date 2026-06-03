@@ -468,12 +468,28 @@ def collate_fn(
             - labels: Shifted labels for prediction
     """
     input_keys = ["input_ids", "labels", "position_ids"]
-    if training_args.num_nextn_predict_layers > 0:
+    mtp_depth = training_args.num_nextn_predict_layers
+    use_mtp_attention_flexible = getattr(model_args, "mtp_attention_flexible", False) and mtp_depth > 0
+
+    if mtp_depth > 0:
         input_keys.append("nbatch_pack_offset")
-    if model_args.use_attn_mask_startend_row_indices:
-        input_keys.append("attn_mask_startend_row_indices")
+
+    if use_mtp_attention_flexible:
+        if model_args.use_attn_mask_startend_row_indices:
+            input_keys.append("attn_mask_startend_row_indices")
+        else:
+            input_keys.append("attention_mask")
+        if model_args.use_attn_mask_startend_row_indices:
+            input_keys.append("mtp_startend_row_indices_all")
+        else:
+            input_keys.append("mtp_attn_mask")
+        input_keys.append("mtp_hidden_inputs_mask_all")
     else:
-        input_keys.append("attention_mask")
+        if model_args.use_attn_mask_startend_row_indices:
+            input_keys.append("attn_mask_startend_row_indices")
+        else:
+            input_keys.append("attention_mask")
+
     return_list = []
     if padding_free:
         batch = [sum(batch, [])]
@@ -494,13 +510,11 @@ def collate_fn(
     if not max_seq_len:
         max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
-    if training_args.num_nextn_predict_layers > 0:
-        max_seq_len += training_args.num_nextn_predict_layers
-        if model_args.use_attn_mask_startend_row_indices:
-            input_keys.append("mtp_attn_mask_startend_row_indices")
-        else:
-            input_keys.append("mtp_attn_mask")
-        input_keys.append("mtp_layer_mask")
+    if mtp_depth > 0:
+        max_seq_len += mtp_depth
+
+    # mask_seq_len: when mtp_attention_flexible is enabled, masks use (max_seq_len - mtp_depth)
+    mask_seq_len = max_seq_len - mtp_depth if use_mtp_attention_flexible else max_seq_len
 
     for batch_sequence in batch:
         if fixed_tokens is not None:
@@ -528,7 +542,7 @@ def collate_fn(
             ]
         )
 
-        if training_args.num_nextn_predict_layers > 0:
+        if mtp_depth > 0:
             # each sequence end index
             batch_sequence_len = [len(sequence) for sequence in original_position_ids]
             nbatch_pack_offset = [0] * sum(batch_sequence_len)
@@ -539,25 +553,24 @@ def collate_fn(
             padded_nbatch_pack_offset = pad_batch_data([nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len)
             return_list[-1].append(padded_nbatch_pack_offset)
 
-        if model_args.use_attn_mask_startend_row_indices:
-            return_list[-1].append(
-                gen_attn_mask_startend_row_indices(
-                    original_position_ids, max_seq_len, model_args.use_global_causal_attn
-                )
-            )
-        else:
-            return_list[-1].append(
-                gen_self_attn_mask(original_position_ids, max_seq_len, model_args.use_global_causal_attn)
-            )
-
-        if training_args.num_nextn_predict_layers > 0:
-
+        if use_mtp_attention_flexible:
+            # mtp_attention_flexible path: all masks use mask_seq_len
             if model_args.use_attn_mask_startend_row_indices:
                 return_list[-1].append(
-                    gen_mtp_attn_mask_startend_row_indices(
+                    gen_attn_mask_startend_row_indices(
+                        original_position_ids, mask_seq_len, model_args.use_global_causal_attn
+                    )
+                )
+            else:
+                return_list[-1].append(
+                    gen_self_attn_mask(original_position_ids, mask_seq_len, model_args.use_global_causal_attn)
+                )
+            if model_args.use_attn_mask_startend_row_indices:
+                return_list[-1].append(
+                    gen_mtp_startend_row_indices_all(
                         original_position_ids,
-                        max_seq_len,
-                        training_args.num_nextn_predict_layers,
+                        mask_seq_len,
+                        mtp_depth,
                         model_args.use_global_causal_attn,
                     )
                 )
@@ -565,19 +578,30 @@ def collate_fn(
                 return_list[-1].append(
                     gen_mtp_attn_mask(
                         original_position_ids,
-                        max_seq_len,
-                        training_args.num_nextn_predict_layers,
+                        mask_seq_len,
+                        mtp_depth,
                         model_args.use_global_causal_attn,
                     )
                 )
-
             return_list[-1].append(
-                gen_mtp_layer_mask(
+                gen_mtp_hidden_inputs_mask_all(
                     original_position_ids,
-                    max_seq_len,
-                    training_args.num_nextn_predict_layers,
+                    mask_seq_len,
+                    mtp_depth,
                 )
             )
+        else:
+            # original data flow: only attn mask
+            if model_args.use_attn_mask_startend_row_indices:
+                return_list[-1].append(
+                    gen_attn_mask_startend_row_indices(
+                        original_position_ids, mask_seq_len, model_args.use_global_causal_attn
+                    )
+                )
+            else:
+                return_list[-1].append(
+                    gen_self_attn_mask(original_position_ids, mask_seq_len, model_args.use_global_causal_attn)
+                )
 
     return_list = [np.concatenate(tensor_list) for tensor_list in zip(*return_list)]
     input_dict = dict(zip(input_keys, return_list))
@@ -670,12 +694,27 @@ def mm_collate_fn(
         input_keys.append("input_features")
         input_keys.append("feature_attention_mask")
 
-    if training_args.num_nextn_predict_layers > 0:
+    mtp_depth = training_args.num_nextn_predict_layers
+    use_mtp_attention_flexible = getattr(model_args, "mtp_attention_flexible", False) and mtp_depth > 0
+
+    if mtp_depth > 0:
         input_keys.append("nbatch_pack_offset")
-    if model_args.use_attn_mask_startend_row_indices:
-        input_keys.append("attn_mask_startend_row_indices")
+
+    if use_mtp_attention_flexible:
+        if model_args.use_attn_mask_startend_row_indices:
+            input_keys.append("attn_mask_startend_row_indices")
+        else:
+            input_keys.append("attention_mask")
+        if model_args.use_attn_mask_startend_row_indices:
+            input_keys.append("mtp_startend_row_indices_all")
+        else:
+            input_keys.append("mtp_attn_mask")
+        input_keys.append("mtp_hidden_inputs_mask_all")
     else:
-        input_keys.append("attention_mask")
+        if model_args.use_attn_mask_startend_row_indices:
+            input_keys.append("attn_mask_startend_row_indices")
+        else:
+            input_keys.append("attention_mask")
 
     return_list = []
     if padding_free:
@@ -684,8 +723,11 @@ def mm_collate_fn(
     if not max_seq_len:
         max_seq_len = max(sum(len(item.token_ids) for item in sequence) for sequence in batch)
     max_seq_len = calc_padding_size(max_seq_len, training_args)
-    if training_args.num_nextn_predict_layers > 0:
-        max_seq_len += training_args.num_nextn_predict_layers
+    if mtp_depth > 0:
+        max_seq_len += mtp_depth
+
+    # mask_seq_len: when mtp_attention_flexible is enabled, masks use (max_seq_len - mtp_depth)
+    mask_seq_len = max_seq_len - mtp_depth if use_mtp_attention_flexible else max_seq_len
 
     for batch_sequence in batch:
         original_token_ids = []
@@ -783,7 +825,7 @@ def mm_collate_fn(
                 ]
             )
 
-        if training_args.num_nextn_predict_layers > 0:
+        if mtp_depth > 0:
             # each sequence end index
             batch_sequence_len = [len(sequence) for sequence in original_token_ids]
             nbatch_pack_offset = [0] * sum(batch_sequence_len)
@@ -794,14 +836,55 @@ def mm_collate_fn(
             padded_nbatch_pack_offset = pad_batch_data([nbatch_pack_offset], pad_idx=0, max_seq_len=max_seq_len)
             return_list[-1].append(padded_nbatch_pack_offset)
 
-        if model_args.use_attn_mask_startend_row_indices:
+        if use_mtp_attention_flexible:
+            # mtp_attention_flexible path: all masks use mask_seq_len
+            if model_args.use_attn_mask_startend_row_indices:
+                return_list[-1].append(
+                    gen_attn_mask_startend_row_indices(
+                        original_token_ids, mask_seq_len, model_args.use_global_causal_attn
+                    )
+                )
+            else:
+                return_list[-1].append(
+                    gen_self_attn_mask(original_token_ids, mask_seq_len, model_args.use_global_causal_attn)
+                )
+            if model_args.use_attn_mask_startend_row_indices:
+                return_list[-1].append(
+                    gen_mtp_startend_row_indices_all(
+                        original_token_ids,
+                        mask_seq_len,
+                        mtp_depth,
+                        model_args.use_global_causal_attn,
+                    )
+                )
+            else:
+                return_list[-1].append(
+                    gen_mtp_attn_mask(
+                        original_token_ids,
+                        mask_seq_len,
+                        mtp_depth,
+                        model_args.use_global_causal_attn,
+                    )
+                )
             return_list[-1].append(
-                gen_attn_mask_startend_row_indices(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
+                gen_mtp_hidden_inputs_mask_all(
+                    original_token_ids,
+                    mask_seq_len,
+                    mtp_depth,
+                )
             )
         else:
-            return_list[-1].append(
-                gen_self_attn_mask(original_token_ids, max_seq_len, model_args.use_global_causal_attn)
-            )
+            # original data flow: only attn mask
+            if model_args.use_attn_mask_startend_row_indices:
+                return_list[-1].append(
+                    gen_attn_mask_startend_row_indices(
+                        original_token_ids, mask_seq_len, model_args.use_global_causal_attn
+                    )
+                )
+            else:
+                return_list[-1].append(
+                    gen_self_attn_mask(original_token_ids, mask_seq_len, model_args.use_global_causal_attn)
+                )
 
     transposed_list = list(zip(*return_list))
     input_dict = {}
@@ -948,7 +1031,8 @@ def gen_mtp_attn_mask(
             otherwise use block-causal mask with per-layer shifted boundaries.
 
     Returns:
-        np.ndarray, shape [mtp_depth, 1, max_seq_len, max_seq_len], dtype=float32.
+        np.ndarray, shape [1, mtp_depth, max_seq_len, max_seq_len], dtype=float32.
+        After collate (np.concatenate along dim0), final shape is [B, num_mtp, S, S].
     """
     total_len = sum(len(ids) for ids in batch_token_ids)
     if use_global_causal_attn:
@@ -973,10 +1057,10 @@ def gen_mtp_attn_mask(
                 prev = boundary
             result.append(mask)
         result = np.stack(result, axis=0)
-    return result[:, None, :, :]
+    return result[None, :, :, :]
 
 
-def gen_mtp_attn_mask_startend_row_indices(
+def gen_mtp_startend_row_indices_all(
     batch_token_ids: List[List[int]],
     max_seq_len: int,
     mtp_depth: int,
@@ -991,7 +1075,8 @@ def gen_mtp_attn_mask_startend_row_indices(
         use_global_causal_attn: If True, single global block; otherwise per-layer shifted blocks.
 
     Returns:
-        np.ndarray, shape [mtp_depth, 1, max_seq_len, 1], dtype=int32.
+        np.ndarray, shape [1, mtp_depth, max_seq_len, 1], dtype=int32.
+        After collate (np.concatenate along dim0), final shape is [B, num_mtp, S, 1].
     """
     total_len = sum(len(ids) for ids in batch_token_ids)
     pad_indices = list(range(total_len, max_seq_len))
@@ -1015,10 +1100,10 @@ def gen_mtp_attn_mask_startend_row_indices(
                 prev = boundary
             result.append(indices + pad_indices)
         result = np.array(result, dtype=np.int32)
-    return result[:, None, :, None]
+    return result[None, :, :, None]
 
 
-def gen_mtp_layer_mask(
+def gen_mtp_hidden_inputs_mask_all(
     batch_position_ids: List[List[int]],
     max_seq_len: int,
     mtp_depth: int,
@@ -1032,7 +1117,8 @@ def gen_mtp_layer_mask(
         mtp_depth: Number of MTP prediction layers.
 
     Returns:
-        np.ndarray, shape [mtp_depth, max_seq_len], dtype=int32.
+        np.ndarray, shape [1, mtp_depth, max_seq_len], dtype=int32.
+        After collate (np.concatenate along dim0), final shape is [B, num_mtp, S].
     """
     all_position_ids = np.concatenate([np.array(ids, dtype=np.int32) for ids in batch_position_ids])
     if len(all_position_ids) < max_seq_len:
@@ -1042,9 +1128,12 @@ def gen_mtp_layer_mask(
     mask = np.ones(max_seq_len, dtype=np.int32)
     mask[boundaries] = 0
     result = []
-    for _ in range(mtp_depth):
-        new_mask = np.ones(max_seq_len, dtype=np.int32)
-        new_mask[:-1] = mask[1:]
-        mask = new_mask
-        result.append(mask)
-    return np.stack(result, axis=0)
+    for k in range(mtp_depth):
+        if k == 0:
+            result.append(mask.copy())
+        else:
+            new_mask = np.ones(max_seq_len, dtype=np.int32)
+            new_mask[:-1] = mask[1:]
+            mask = new_mask
+            result.append(mask.copy())
+    return np.stack(result, axis=0)[None, :, :]

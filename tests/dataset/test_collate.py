@@ -20,8 +20,8 @@ from paddleformers.datasets.collate import (
     calc_padding_size,
     gen_attn_mask_startend_row_indices,
     gen_mtp_attn_mask,
-    gen_mtp_attn_mask_startend_row_indices,
-    gen_mtp_layer_mask,
+    gen_mtp_hidden_inputs_mask_all,
+    gen_mtp_startend_row_indices_all,
     gen_self_attn_mask,
     pad_batch_data,
 )
@@ -118,13 +118,13 @@ class TestGenMtpAttnMask(unittest.TestCase):
         return gen_mtp_attn_mask(BATCH, MAX_SEQ_LEN, MTP_DEPTH, use_global_causal_attn)
 
     def test_output_shape(self):
-        self.assertEqual(self._call(False).shape, (MTP_DEPTH, 1, MAX_SEQ_LEN, MAX_SEQ_LEN))
+        self.assertEqual(self._call(False).shape, (1, MTP_DEPTH, MAX_SEQ_LEN, MAX_SEQ_LEN))
 
     def test_global_causal_is_lower_triangular(self):
         mask = self._call(True)
         expected = np.tril(np.ones((TOTAL_LEN, TOTAL_LEN), dtype=np.float32))
         for k in range(MTP_DEPTH):
-            np.testing.assert_array_equal(mask[k, 0, :TOTAL_LEN, :TOTAL_LEN], expected)
+            np.testing.assert_array_equal(mask[0, k, :TOTAL_LEN, :TOTAL_LEN], expected)
 
     def test_layer0_block_boundaries(self):
         """Layer 0: blocks [0:2] and [2:6], no cross-block attention."""
@@ -135,7 +135,7 @@ class TestGenMtpAttnMask(unittest.TestCase):
 
     def test_layer1_block_boundaries(self):
         """Layer 1: blocks [0:1] and [1:6], no cross-block attention."""
-        m = self._call(False)[1, 0]
+        m = self._call(False)[0, 1]
         self.assertEqual(m[0, 0], 1.0)
         np.testing.assert_array_equal(m[1:6, 1:6], np.tril(np.ones((5, 5))))
         np.testing.assert_array_equal(m[1:6, :1], 0.0)
@@ -143,16 +143,16 @@ class TestGenMtpAttnMask(unittest.TestCase):
     def test_padding_area_is_zero(self):
         mask = self._call(False)
         for k in range(MTP_DEPTH):
-            np.testing.assert_array_equal(mask[k, 0, TOTAL_LEN:, :], 0.0)
+            np.testing.assert_array_equal(mask[0, k, TOTAL_LEN:, :], 0.0)
 
 
-class TestGenMtpAttnMaskStartendRowIndices(unittest.TestCase):
+class TestGenMtpStartendRowIndicesAll(unittest.TestCase):
     def _call(self, use_global_causal_attn):
-        return gen_mtp_attn_mask_startend_row_indices(BATCH, MAX_SEQ_LEN, MTP_DEPTH, use_global_causal_attn)
+        return gen_mtp_startend_row_indices_all(BATCH, MAX_SEQ_LEN, MTP_DEPTH, use_global_causal_attn)
 
     def test_output_shape_and_dtype(self):
         result = self._call(False)
-        self.assertEqual(result.shape, (MTP_DEPTH, 1, MAX_SEQ_LEN, 1))
+        self.assertEqual(result.shape, (1, MTP_DEPTH, MAX_SEQ_LEN, 1))
         self.assertEqual(result.dtype, np.int32)
 
     def test_layer0_end_row_values(self):
@@ -163,14 +163,14 @@ class TestGenMtpAttnMaskStartendRowIndices(unittest.TestCase):
 
     def test_layer1_end_row_values(self):
         """Layer 1: position 0 -> end=1, positions 1-5 -> end=6."""
-        indices = self._call(False)[1, 0, :TOTAL_LEN, 0].tolist()
+        indices = self._call(False)[0, 1, :TOTAL_LEN, 0].tolist()
         self.assertEqual(indices[0], 1)
         self.assertEqual(indices[1:], [6, 6, 6, 6, 6])
 
     def test_padding_area_is_ascending(self):
         result = self._call(False)
         for k in range(MTP_DEPTH):
-            self.assertEqual(result[k, 0, TOTAL_LEN:, 0].tolist(), list(range(TOTAL_LEN, MAX_SEQ_LEN)))
+            self.assertEqual(result[0, k, TOTAL_LEN:, 0].tolist(), list(range(TOTAL_LEN, MAX_SEQ_LEN)))
 
     def test_consistency_with_2d_mask(self):
         """startend_row_indices must agree with the 2D matrix version."""
@@ -178,97 +178,101 @@ class TestGenMtpAttnMaskStartendRowIndices(unittest.TestCase):
         result = self._call(False)
         for k in range(MTP_DEPTH):
             for pos in range(TOTAL_LEN):
-                end = int(result[k, 0, pos, 0])
+                end = int(result[0, k, pos, 0])
                 np.testing.assert_array_equal(
-                    mask_2d[k, 0, pos, end:TOTAL_LEN],
+                    mask_2d[0, k, pos, end:TOTAL_LEN],
                     0.0,
                     err_msg=f"layer={k} pos={pos} end={end}",
                 )
 
 
 # ---------------------------------------------------------------------------
-# gen_mtp_layer_mask — uses position_ids for boundary detection
+# gen_mtp_hidden_inputs_mask_all — uses position_ids for boundary detection
 #
 # Input: position_ids for 2 sequences of length 3 each.
 # position_ids = [[0,1,2], [0,1,2]] -> concatenated = [0,1,2,0,1,2]
 # Padded to max_seq_len=8: [0,1,2,0,1,2,0,0]
 #
-# Layer 0: shifted = all_pos[1:] = [1,2,0,1,2,0,0]
-#   boundary: shifted[i]>shifted[i+1] -> i=1(2>0), i=4(2>0) -> mask[1]=0, mask[4]=0
-# Layer 1: shifted = all_pos[2:] = [2,0,1,2,0,0]
-#   boundary: shifted[i]>shifted[i+1] -> i=0(2>0), i=3(2>0) -> mask[0]=0, mask[3]=0
+# detect = [0,1,2,0,1,2,0,0, 0]
+# boundaries: detect[:-1]>detect[1:] => [2, 5]
+# mask = [1,1,0,1,1,0,1,1]
+#
+# Layer 0: mask itself -> [1,1,0,1,1,0,1,1]
+# Layer 1: left shift  -> [1,0,1,1,0,1,1,1]
 # ---------------------------------------------------------------------------
 
 
-class TestGenMtpLayerMask(unittest.TestCase):
+class TestGenMtpHiddenInputsMaskAll(unittest.TestCase):
     POSITION_IDS = [[0, 1, 2], [0, 1, 2]]
     MTP_DEPTH = 2
     MAX_SEQ_LEN = 8
 
     EXPECTED = np.array(
         [
-            [1, 0, 1, 1, 0, 1, 1, 1],
-            [0, 1, 1, 0, 1, 1, 1, 1],
+            [[1, 1, 0, 1, 1, 0, 1, 1], [1, 0, 1, 1, 0, 1, 1, 1]],
         ],
         dtype=np.int32,
     )
 
     def test_output_shape_and_dtype(self):
-        result = gen_mtp_layer_mask(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
-        self.assertEqual(result.shape, (self.MTP_DEPTH, self.MAX_SEQ_LEN))
+        result = gen_mtp_hidden_inputs_mask_all(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
+        self.assertEqual(result.shape, (1, self.MTP_DEPTH, self.MAX_SEQ_LEN))
         self.assertEqual(result.dtype, np.int32)
 
     def test_full_output(self):
-        result = gen_mtp_layer_mask(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
+        result = gen_mtp_hidden_inputs_mask_all(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
         np.testing.assert_array_equal(result, self.EXPECTED)
 
     def test_layer0_boundaries(self):
-        """Layer 0: boundaries at positions 1 and 4."""
-        result = gen_mtp_layer_mask(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
-        self.assertEqual(result[0, 1], 0)
-        self.assertEqual(result[0, 4], 0)
+        """Layer 0: boundaries at positions 2 and 5."""
+        result = gen_mtp_hidden_inputs_mask_all(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
+        self.assertEqual(result[0, 0, 2], 0)
+        self.assertEqual(result[0, 0, 5], 0)
 
     def test_layer1_boundaries(self):
-        """Layer 1: boundaries at positions 0 and 3."""
-        result = gen_mtp_layer_mask(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
-        self.assertEqual(result[1, 0], 0)
-        self.assertEqual(result[1, 3], 0)
+        """Layer 1: boundaries at positions 1 and 4."""
+        result = gen_mtp_hidden_inputs_mask_all(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
+        self.assertEqual(result[0, 1, 1], 0)
+        self.assertEqual(result[0, 1, 4], 0)
 
     def test_padding_area_is_one(self):
-        result = gen_mtp_layer_mask(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
+        result = gen_mtp_hidden_inputs_mask_all(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
         for k in range(self.MTP_DEPTH):
-            np.testing.assert_array_equal(result[k, 6:], 1)
+            np.testing.assert_array_equal(result[0, k, 6:], 1)
 
     def test_single_sequence_no_boundary(self):
         """Single sequence: only boundary is at the end (before padding)."""
         pos_ids = [[0, 1, 2, 3, 4]]
-        result = gen_mtp_layer_mask(pos_ids, 8, 2)
+        result = gen_mtp_hidden_inputs_mask_all(pos_ids, 8, 2)
         # Padded: [0,1,2,3,4,0,0,0]
-        # Layer 0: shifted=[1,2,3,4,0,0,0], boundary at i=3(4>0) -> mask[3]=0
-        # Layer 1: shifted=[2,3,4,0,0,0], boundary at i=2(4>0) -> mask[2]=0
-        self.assertEqual(result[0, 3], 0)
-        self.assertEqual(result[1, 2], 0)
-        self.assertEqual(result[0].sum(), 7)
-        self.assertEqual(result[1].sum(), 7)
+        # boundaries = [4] (4>0)
+        # mask = [1,1,1,1,0,1,1,1]
+        # Layer 0: mask itself -> [1,1,1,1,0,1,1,1], boundary at pos 4
+        # Layer 1: left shift -> [1,1,1,0,1,1,1,1], boundary at pos 3
+        self.assertEqual(result[0, 0, 4], 0)
+        self.assertEqual(result[0, 1, 3], 0)
+        self.assertEqual(result[0, 0].sum(), 7)
+        self.assertEqual(result[0, 1].sum(), 7)
 
 
 # ---------------------------------------------------------------------------
-# gen_mtp_layer_mask — 3 sequences, depth=3
+# gen_mtp_hidden_inputs_mask_all — 3 sequences, depth=3
 #
 # position_ids = [[0,1,2], [0,1], [0,1,2]] -> concat = [0,1,2,0,1,0,1,2]
 # total_len=8, max_seq_len=11 (8+3)
 # Padded to 11: [0,1,2,0,1,0,1,2,0,0,0]
 #
-# Layer 0: shifted = all_pos[1:] = [1,2,0,1,0,1,2,0,0,0]
-#   boundary: i=1(2>0), i=3(1>0), i=6(2>0) -> mask[1]=0, mask[3]=0, mask[6]=0
-# Layer 1: shifted = all_pos[2:] = [2,0,1,0,1,2,0,0,0]
-#   boundary: i=0(2>0), i=2(1>0), i=5(2>0) -> mask[0]=0, mask[2]=0, mask[5]=0
-# Layer 2: shifted = all_pos[3:] = [0,1,0,1,2,0,0,0]
-#   boundary: i=1(1>0), i=4(2>0) -> mask[1]=0, mask[4]=0
+# detect = [0,1,2,0,1,0,1,2,0,0,0, 0]
+# boundaries: detect[:-1]>detect[1:] => [2, 4, 7]
+# mask = [1,1,0,1,0,1,1,0,1,1,1]
+#
+# Layer 0: mask itself -> [1,1,0,1,0,1,1,0,1,1,1]
+# Layer 1: left shift  -> [1,0,1,0,1,1,0,1,1,1,1]
+# Layer 2: left shift  -> [0,1,0,1,1,0,1,1,1,1,1]
 # ---------------------------------------------------------------------------
 
 
-class TestGenMtpLayerMaskDepth3(unittest.TestCase):
+class TestGenMtpHiddenInputsMaskAllDepth3(unittest.TestCase):
     """Test with 3 packed sequences and mtp_depth=3."""
 
     POSITION_IDS = [[0, 1, 2], [0, 1], [0, 1, 2]]
@@ -277,20 +281,18 @@ class TestGenMtpLayerMaskDepth3(unittest.TestCase):
 
     EXPECTED = np.array(
         [
-            [1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1],
-            [0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1],
-            [1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1],
+            [[1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1], [1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1], [0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1]],
         ],
         dtype=np.int32,
     )
 
     def test_full_output(self):
-        result = gen_mtp_layer_mask(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
+        result = gen_mtp_hidden_inputs_mask_all(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
         np.testing.assert_array_equal(result, self.EXPECTED)
 
     def test_shape_and_dtype(self):
-        result = gen_mtp_layer_mask(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
-        self.assertEqual(result.shape, (3, 11))
+        result = gen_mtp_hidden_inputs_mask_all(self.POSITION_IDS, self.MAX_SEQ_LEN, self.MTP_DEPTH)
+        self.assertEqual(result.shape, (1, 3, 11))
         self.assertEqual(result.dtype, np.int32)
 
 
