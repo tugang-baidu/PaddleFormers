@@ -541,6 +541,12 @@ class LlmMetaConfig:
             "Standard deviation for embedding layer initialization (only effective if `embedding_init_method='normal'`). Defaults to 0.02 (common choice for transformer embeddings to avoid saturation).",
         ),
         ("fa_version", int, 2, "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."),
+        (
+            "use_accuracy_compatible",
+            bool,
+            False,
+            "Whether to enable accuracy-compatible kernels for cross-framework numerical alignment. Defaults to False.",
+        ),
         ("experimental_dataflow", bool, False, "Whether to enable experimental dataflow in Fleet. Default is False."),
     ]
 

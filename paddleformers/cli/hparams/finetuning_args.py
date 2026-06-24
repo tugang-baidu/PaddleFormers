@@ -303,6 +303,11 @@ class FinetuningArguments(
         },
     )
 
+    use_accuracy_compatible: bool = field(
+        default=False,
+        metadata={"help": ("Whether to enable accuracy alignment with the Megatron framework.")},
+    )
+
     def __post_init__(self):
         if self.internal_medicine_monitors and self.internal_medicine_monitor_interval < 1:
             raise ValueError("internal_medicine_monitor_interval must be greater than 0 when monitors are enabled")
